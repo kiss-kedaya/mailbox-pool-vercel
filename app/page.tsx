@@ -44,7 +44,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'import failed');
       setCount(data.count);
-      setMessage({ type: 'ok', text: `导入成功：新增 ${data.added} 行，忽略重复 ${data.ignored} 行，当前在线 ${data.count} 个` });
+      setMessage({ type: 'ok', text: `导入成功：新增 ${data.added} 行，忽略重复 ${data.ignored} 行（其中数据库已有 ${data.existingIgnored || 0} 行），当前在线 ${data.count} 个` });
     } catch (error) {
       setMessage({ type: 'bad', text: error instanceof Error ? error.message : String(error) });
     } finally {
