@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 
 const tableName = 'mailbox_pool_items';
+const consumedTableName = 'mailbox_pool_consumed_items';
 
 type MailboxRow = {
   mailbox: string;
@@ -14,6 +15,7 @@ export type ImportResult = {
   added: number;
   ignored: number;
   existingIgnored: number;
+  consumedIgnored: number;
   count: number;
 };
 
@@ -35,6 +37,13 @@ async function ensureTable() {
         id BIGSERIAL PRIMARY KEY,
         mailbox TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await sql.query(`
+      CREATE TABLE IF NOT EXISTS ${consumedTableName} (
+        mailbox_key TEXT PRIMARY KEY,
+        mailbox TEXT NOT NULL,
+        consumed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
     await sql.query(`
@@ -89,19 +98,42 @@ export async function importMailboxes(text: string): Promise<ImportResult> {
   const { mailboxes, ignored } = parseMailboxText(text);
   const sql = await ensureTable();
   let added = 0;
+  let consumedIgnored = 0;
 
   if (mailboxes.length > 0) {
     const placeholders = mailboxes.map((_, index) => `($${index + 1})`).join(',');
+    const consumedRows = await sql.query(
+      `WITH incoming(mailbox) AS (VALUES ${placeholders})
+       SELECT COUNT(*) AS count
+       FROM incoming
+       WHERE EXISTS (
+         SELECT 1 FROM ${consumedTableName} consumed
+         WHERE consumed.mailbox_key = LOWER(TRIM(SPLIT_PART(incoming.mailbox, '----', 1)))
+       )`,
+      mailboxes,
+    ) as CountRow[];
+    consumedIgnored = Number(consumedRows[0]?.count || 0);
+
     const rows = await sql.query(
-      `INSERT INTO ${tableName} (mailbox) VALUES ${placeholders} ON CONFLICT DO NOTHING RETURNING mailbox`,
+      `WITH incoming(mailbox) AS (VALUES ${placeholders})
+       INSERT INTO ${tableName} (mailbox)
+       SELECT mailbox
+       FROM incoming
+       WHERE NOT EXISTS (
+         SELECT 1 FROM ${consumedTableName} consumed
+         WHERE consumed.mailbox_key = LOWER(TRIM(SPLIT_PART(incoming.mailbox, '----', 1)))
+       )
+       ON CONFLICT DO NOTHING
+       RETURNING mailbox`,
       mailboxes,
     ) as MailboxRow[];
     added = rows.length;
   }
 
-  const existingIgnored = mailboxes.length - added;
+  const existingIgnored = mailboxes.length - added - consumedIgnored;
+  const totalIgnored = ignored + Math.max(0, existingIgnored) + consumedIgnored;
   const count = await countMailboxes();
-  return { added, ignored: ignored + existingIgnored, existingIgnored, count };
+  return { added, ignored: totalIgnored, existingIgnored: Math.max(0, existingIgnored), consumedIgnored, count };
 }
 
 export async function popMailbox() {
@@ -113,11 +145,19 @@ export async function popMailbox() {
       ORDER BY id ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
+    ), deleted AS (
+      DELETE FROM ${tableName}
+      USING picked
+      WHERE ${tableName}.id = picked.id
+      RETURNING ${tableName}.mailbox
+    ), remembered AS (
+      INSERT INTO ${consumedTableName} (mailbox_key, mailbox)
+      SELECT LOWER(TRIM(SPLIT_PART(mailbox, '----', 1))), mailbox
+      FROM deleted
+      ON CONFLICT (mailbox_key) DO UPDATE SET mailbox = EXCLUDED.mailbox, consumed_at = NOW()
+      RETURNING mailbox
     )
-    DELETE FROM ${tableName}
-    USING picked
-    WHERE ${tableName}.id = picked.id
-    RETURNING ${tableName}.mailbox
+    SELECT mailbox FROM deleted
   `) as MailboxRow[];
 
   const mailbox = rows[0]?.mailbox || null;

@@ -77,6 +77,7 @@ export default function Home() {
       let added = 0;
       let ignored = 0;
       let existingIgnored = 0;
+      let consumedIgnored = 0;
       let latestCount = count;
 
       for (let index = 0; index < chunks.length; index += 1) {
@@ -93,11 +94,12 @@ export default function Home() {
         added += Number(data.added || 0);
         ignored += Number(data.ignored || 0);
         existingIgnored += Number(data.existingIgnored || 0);
+        consumedIgnored += Number(data.consumedIgnored || 0);
         latestCount = Number(data.count || latestCount || 0);
         setCount(latestCount);
       }
 
-      setMessage({ type: 'ok', text: `导入成功：分 ${chunks.length} 批，新增 ${added} 行，忽略重复 ${ignored} 行（其中数据库已有 ${existingIgnored} 行），当前在线 ${latestCount} 个` });
+      setMessage({ type: 'ok', text: `导入成功：分 ${chunks.length} 批，新增 ${added} 行，忽略重复 ${ignored} 行（其中数据库已有 ${existingIgnored} 行，历史已取 ${consumedIgnored} 行），当前在线 ${latestCount} 个` });
     } catch (error) {
       setMessage({ type: 'bad', text: error instanceof Error ? error.message : String(error) });
     } finally {
