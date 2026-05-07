@@ -2,6 +2,44 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 
+const importChunkMaxLines = 1000;
+const importChunkMaxChars = 250_000;
+
+async function readJsonOrThrow(res: Response) {
+  const raw = await res.text();
+  let data: Record<string, any> = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    if (!res.ok) throw new Error(raw || res.statusText);
+    throw new Error(`invalid json response: ${raw.slice(0, 120)}`);
+  }
+  if (!res.ok) throw new Error(String(data.error || raw || res.statusText));
+  return data;
+}
+
+function splitImportText(value: string) {
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let currentChars = 0;
+
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const nextChars = line.length + 1;
+    if (current.length > 0 && (current.length >= importChunkMaxLines || currentChars + nextChars > importChunkMaxChars)) {
+      chunks.push(current.join('\n'));
+      current = [];
+      currentChars = 0;
+    }
+    current.push(line);
+    currentChars += nextChars;
+  }
+
+  if (current.length > 0) chunks.push(current.join('\n'));
+  return chunks;
+}
+
 export default function Home() {
   const [text, setText] = useState('');
   const [token, setToken] = useState('');
@@ -33,18 +71,33 @@ export default function Home() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/mailboxes/import', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(token ? { 'x-admin-token': token } : {}),
-        },
-        body: JSON.stringify({ text }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'import failed');
-      setCount(data.count);
-      setMessage({ type: 'ok', text: `导入成功：新增 ${data.added} 行，忽略重复 ${data.ignored} 行（其中数据库已有 ${data.existingIgnored || 0} 行），当前在线 ${data.count} 个` });
+      const chunks = splitImportText(text);
+      if (chunks.length === 0) return;
+
+      let added = 0;
+      let ignored = 0;
+      let existingIgnored = 0;
+      let latestCount = count;
+
+      for (let index = 0; index < chunks.length; index += 1) {
+        setMessage({ type: 'ok', text: `正在分批导入：${index + 1}/${chunks.length}` });
+        const res = await fetch('/api/mailboxes/import', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(token ? { 'x-admin-token': token } : {}),
+          },
+          body: JSON.stringify({ text: chunks[index] }),
+        });
+        const data = await readJsonOrThrow(res);
+        added += Number(data.added || 0);
+        ignored += Number(data.ignored || 0);
+        existingIgnored += Number(data.existingIgnored || 0);
+        latestCount = Number(data.count || latestCount || 0);
+        setCount(latestCount);
+      }
+
+      setMessage({ type: 'ok', text: `导入成功：分 ${chunks.length} 批，新增 ${added} 行，忽略重复 ${ignored} 行（其中数据库已有 ${existingIgnored} 行），当前在线 ${latestCount} 个` });
     } catch (error) {
       setMessage({ type: 'bad', text: error instanceof Error ? error.message : String(error) });
     } finally {
