@@ -111,7 +111,13 @@ export default function Home() {
     setLoading(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/mailboxes/next', { method: 'POST', cache: 'no-store' });
+      const res = await fetch('/api/mailboxes/next', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          ...(token ? { 'x-admin-token': token } : {}),
+        },
+      });
       const data = await res.json();
       setCount(data.count || 0);
       if (!res.ok) throw new Error(data.error || 'empty');
@@ -145,7 +151,7 @@ export default function Home() {
         <div className="row">
           <input type="file" accept=".txt,text/plain" onChange={onFileChange} />
         </div>
-        <p>Admin Token（如果 Vercel 配了 ADMIN_TOKEN，导入时需要填）：</p>
+        <p>Admin Token（如果 Vercel 配了 ADMIN_TOKEN，导入和取出时都需要填）：</p>
         <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="ADMIN_TOKEN" />
         <p>待导入行数：{lineCount}</p>
         <textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="mail1@example.com\nmail2@example.com" />
@@ -158,7 +164,7 @@ export default function Home() {
 
       <section className="card">
         <h2>服务器领取接口</h2>
-        <div className="code">GET /api/mailboxes/next</div>
+        <div className="code">{`GET /api/mailboxes/next\nAuthorization: Bearer <ADMIN_TOKEN>`}</div>
         <p>成功返回：</p>
         <div className="code">{`{ "ok": true, "mailbox": "mail@example.com", "count": 123 }`}</div>
         <p>导入接口：</p>

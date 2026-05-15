@@ -15,7 +15,7 @@
 ## 部署
 
 1. 在 Neon 创建免费 PostgreSQL 数据库，复制连接串。
-2. 准备一个导入密钥，例如 `ADMIN_TOKEN=your-secret-token`。
+2. 准备一个管理员密钥，例如 `ADMIN_TOKEN=your-secret-token`。
 3. **部署到 Vercel**：
    - 点击下面的按钮，一键部署到 Vercel。
 
@@ -24,7 +24,7 @@
    - 在 Vercel 部署页面填写项目名称。
    - 在 Environment Variables 中填写：
      - `DATABASE_URL`：Neon 的 PostgreSQL 连接串，通常包含 `sslmode=require`
-     - `ADMIN_TOKEN`：导入接口密钥
+     - `ADMIN_TOKEN`：导入和领取接口密钥
    - 点击 `Deploy` 按钮。
 
 ## API
@@ -47,7 +47,8 @@ curl -X POST https://你的域名/api/mailboxes/import \
 ### 领取一个邮箱
 
 ```bash
-curl https://你的域名/api/mailboxes/next
+curl https://你的域名/api/mailboxes/next \
+  -H "authorization: Bearer $ADMIN_TOKEN"
 ```
 
 返回：
